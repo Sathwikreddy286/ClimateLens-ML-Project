@@ -15,7 +15,7 @@
 ### 1.1 Problem Statement
 Global climate change and anthropogenic global warming represent some of the most critical challenges confronting humanity. Instrumental climate records maintained by global scientific agencies document an unprecedented acceleration in Earth's surface temperature since the late 20th century. Concurrently, human industrial activities have steadily elevated concentrations of atmospheric greenhouse gases—predominantly Carbon Dioxide ($\text{CO}_2$).
 
-Developing accurate, interpretable, and reproducible machine learning (ML) models on genuine climate datasets allows students and researchers to understand the empirical association between greenhouse gas emissions and global surface temperature anomalies. The objective of this project is to develop **ClimateLens**, an end-to-end machine learning and data visualization system that ingests authoritative datasets from **NASA** and **NOAA**, processes time-series observations without data leakage, compares regularized linear and non-linear ensemble regression models, and provides an interactive web interface for climate scenario analysis.
+Developing interpretable, reproducible, and methodologically sound machine learning (ML) models on authentic climate datasets enables students and researchers to understand the empirical association between greenhouse gas emissions and global surface temperature anomalies. The objective of this project is to develop **ClimateLens**, an end-to-end machine learning and data visualization system that ingests authoritative datasets from **NASA** and **NOAA**, processes time-series observations without data leakage, benchmarks regularized linear and non-linear ensemble regression models, and provides an interactive web interface for climate scenario analysis.
 
 ### 1.2 System Architecture
 ```
@@ -31,7 +31,7 @@ Developing accurate, interpretable, and reproducible machine learning (ML) model
 |  - Datatype Normalization & Null / Infinite Value Scrubbing                       |
 |  - Calendar-Year Inner Join Alignment (1979–2025)                                 |
 |  - Auto-Regressive Feature Engineering: Previous Year Temperature Anomaly (Tt-1)   |
-|  - Verified Offline Cache Fallback Mechanism                                      |
+|  - Verified Offline Cache Fallback Mechanism (data/cleaned_climate_dataset.csv)    |
 +------------------------------------------+----------------------------------------+
                                            |
                                            v
@@ -89,7 +89,7 @@ The project utilizes genuine, publicly accessible empirical measurements:
   The initial un-lagged year (1979) is dropped, yielding **46 contiguous annual records (1980–2025)**.
 
 ### 2.2 Data Splitting and Generalization Strategy
-A standard random $k$-fold cross-validation is fundamentally invalid for chronological time-series data because it leaks future climate information into the training phase (temporal data leakage). To ensure genuine generalization:
+Standard random $k$-fold cross-validation is fundamentally invalid for chronological time-series data because it leaks future climate information into the training phase (temporal data leakage). To ensure genuine generalization:
 - **Chronological Split:** The earliest 80% of records (**1980–2015, $N=36$**) are allocated to the training partition. The most recent 20% (**2016–2025, $N=10$**) are sequestered as an untouched test set.
 - **Cross-Validation (`TimeSeriesSplit`):** An expanding-window 5-fold cross-validation is applied exclusively to the training partition. In each split, the model trains strictly on past years and validates on the immediate subsequent years.
 
@@ -149,18 +149,28 @@ The following table records the exact, un-fabricated evaluation results generate
 | **2024** | 1.28 | 1.1097 | 0.7626 | -0.1703 | -0.5174 |
 | **2025** | 1.19 | 1.1666 | 0.7626 | -0.0234 | -0.4274 |
 
-### 3.3 Deep Scientific Insights & Why Random Forest Failed to Generalize
-An essential requirement of academic integrity is explaining machine learning behavior honestly:
+### 3.3 Critical Methodological Analysis
 
-1. **Why Random Forest Had Lower CV Error but Failed on the Test Set:**
-   - In cross-validation on the training set (1980–2015), temperature anomalies fluctuated within a bounded range ($0.14^\circ\text{C}$ to $0.87^\circ\text{C}$). Random Forest effectively partitioned this non-linear variance and achieved a superior CV MAE ($0.1194^\circ\text{C}$ vs $0.1272^\circ\text{C}$).
-   - However, **decision trees and tree ensembles cannot extrapolate outside their training feature envelope**. A decision tree outputs the average value of training observations in its terminal leaf. Thus, the maximum temperature Random Forest could ever predict was capped at approximately **$0.7626^\circ\text{C}$**.
-   - When the held-out test years (2016–2025) encountered unprecedented warming (surpassing $1.0^\circ\text{C}$ and reaching $1.28^\circ\text{C}$ in 2024), Random Forest flatlined at its training ceiling, leading to a large Test MAE ($0.2514^\circ\text{C}$).
-2. **Why Ridge Regression Maintained Superior Test Accuracy:**
-   - Ridge Regression models a continuous hyperplane. As $\text{CO}_2$ concentration and calendar year increased into previously unseen territory ($>415\text{ ppm}$), Ridge's positive linear coefficients correctly extrapolated the upward warming trajectory. Ridge achieved a test MAE of only **$0.1248^\circ\text{C}$** and closely tracked the 2024–2025 peak ($1.167^\circ\text{C}$ predicted vs $1.19^\circ\text{C}$ actual).
-3. **Scientific Explanation of Negative $R^2$:**
-   - In time-series regression with non-stationary trends, $R^2$ is measured relative to the mean of the test set ($\bar{y}_{\text{test}} = 1.014^\circ\text{C}$).
-   - Because the test period underwent an abrupt upward regime shift compared to the training mean ($\bar{y}_{\text{train}} = 0.48^\circ\text{C}$), a simple horizontal line fixed at the test mean has a lower sum of squared errors than a model calibrated on historical data. This produces a negative $R^2$ ($R^2 = -0.1049$), which is a mathematically documented phenomenon in out-of-distribution climate time-series evaluation.
+#### 1. Why Random Forest was Selected by CV Despite Ridge Performing Better on the Test Set
+Standard machine learning methodology strictly mandates that **model selection must be performed using cross-validation on the training partition alone**, without inspecting or optimizing for the test set. Doing otherwise would constitute test-set snooping and compromise the integrity of out-of-sample evaluation.
+
+During the historical training period (1980–2015), temperature anomalies fluctuated within a bounded historical envelope ($0.14^\circ\text{C}$ to $0.87^\circ\text{C}$). Across the 5 expanding folds, validation segments remained within or adjacent to this historical range. Random Forest effectively captured the non-linear local curvature of these fluctuations, achieving a lower Mean CV MAE of **$0.1194^\circ\text{C}$** compared to Ridge's **$0.1272^\circ\text{C}$**. Based strictly on training evidence, Random Forest was the legitimate algorithmic winner.
+
+However, when tested on the unseen held-out period (2016–2025), a fundamental structural constraint of tree ensembles emerged: **decision trees split feature space into piecewise constant partitions and cannot predict values higher than the maximum observed in their training leaves**. The training partition had a ceiling of $\approx 0.87^\circ\text{C}$, causing Random Forest leaf predictions to cap out at **$0.7626^\circ\text{C}$**. When real-world warming accelerated sharply in 2016–2025 (reaching $1.28^\circ\text{C}$ in 2024), Random Forest flatlined, doubling its test error ($\text{MAE} = 0.2514^\circ\text{C}$). 
+
+In contrast, Ridge Regression learned a continuous regularized linear hyperplane. As $\text{CO}_2$ concentration and calendar year expanded upward, Ridge successfully extrapolated the upward warming trend, achieving an MAE of **$0.1248^\circ\text{C}$**—half the error of Random Forest. This highlights a critical lesson in applied ML: cross-validation on bounded historical time-series cannot anticipate model behavior under non-stationary out-of-distribution extrapolation.
+
+#### 2. Accurate Interpretation of Negative $R^2$ Scores ($R^2 < 0$)
+It is essential to explain negative $R^2$ scores honestly without claiming high prediction accuracy. 
+
+The coefficient of determination is mathematically defined as:
+$$R^2 = 1 - \frac{\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{\sum_{i=1}^{n} (y_i - \bar{y}_{\text{test}})^2}$$
+
+An $R^2$ of zero means the model performs exactly as well as predicting a constant horizontal line at the test set's own mean ($\bar{y}_{\text{test}} = 1.014^\circ\text{C}$). A negative $R^2$ indicates that the model's Mean Squared Error is worse than simply using the test set mean as a constant prediction.
+
+This occurred because the test partition (2016–2025) underwent an abrupt upward regime shift compared to the training partition mean ($\bar{y}_{\text{train}} = 0.480^\circ\text{C}$). If an oracle possessed future knowledge of $\bar{y}_{\text{test}} = 1.014^\circ\text{C}$, a horizontal line at $1.014^\circ\text{C}$ would yield a small sum of squares ($\text{SS}_{\text{tot}} = 0.207$). Neither model had access to future data. Ridge Regression followed the rising slope closely, but minor offsets across 10 observations resulted in an MSE ($0.0229$) slightly higher than the small test variance, producing $R^2 = -0.1049$. Random Forest, being flatlined at $0.763^\circ\text{C}$, produced large persistent errors resulting in $R^2 = -3.0494$.
+
+**Conclusion on Model Accuracy:** The negative $R^2$ scores confirm that while Ridge captures the directional trend with a modest absolute error ($0.125^\circ\text{C}$), these simple empirical models do NOT possess high explanatory power over the out-of-sample variance. They cannot replace physical Earth-system climate models.
 
 ---
 
@@ -176,7 +186,7 @@ To uphold scientific credibility, the following limitations must be stated:
 
 ## 5. Summary and Conclusion
 
-An end-to-end machine learning system, **ClimateLens**, was successfully engineered, tested, and deployed to study the relationship between atmospheric carbon dioxide and global surface temperature anomalies using authentic NASA and NOAA observations. By enforcing chronological data partitioning and expanding-window cross-validation, data leakage was prevented. The empirical investigation revealed crucial machine learning insights: while Random Forest excelled in cross-validation within historical boundaries, Ridge Regression proved substantially superior in extrapolating non-stationary warming trends on unseen future observations. A modern, responsive Streamlit web application provides interactive exploratory analysis, model evaluation, and scenario simulations.
+An end-to-end machine learning system, **ClimateLens**, was successfully engineered, tested, and prepared for public deployment to study the relationship between atmospheric carbon dioxide and global surface temperature anomalies using authentic NASA and NOAA observations. By enforcing chronological data partitioning and expanding-window cross-validation, data leakage was prevented. The empirical investigation revealed crucial machine learning insights: while Random Forest excelled in cross-validation within historical boundaries, Ridge Regression proved substantially superior in extrapolating non-stationary warming trends on unseen future observations. A modern, responsive Streamlit web application provides interactive exploratory analysis, model evaluation, and scenario simulations.
 
 ---
 

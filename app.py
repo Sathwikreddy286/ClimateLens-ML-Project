@@ -61,6 +61,13 @@ st.markdown("""
         border-radius: 6px;
         margin: 10px 0px 20px 0px;
     }
+    .notice-box {
+        background-color: #ECEFF1;
+        border-left: 5px solid #607D8B;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin: 10px 0px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -261,7 +268,7 @@ kpi1.metric("Total Records", f"{len(df)} Years", f"{int(df.year.min())}–{int(d
 kpi2.metric("Latest Year", f"{int(df.iloc[-1].year)}", "Current record")
 kpi3.metric("Latest CO₂", f"{df.iloc[-1].co2_ppm:.2f} ppm", f"+{(df.iloc[-1].co2_ppm - df.iloc[-2].co2_ppm):.2f} ppm/yr")
 kpi4.metric("Latest Anomaly", f"{df.iloc[-1].temp_anomaly_c:.2f} °C", "re 1951-80 base")
-kpi5.metric("Best Model (CV)", ml_res["best_name"], f"CV MAE: {ml_res['model_eval'][ml_res['best_name']]['CV Mean MAE (°C)']:.3f}°C")
+kpi5.metric("Model Selected by CV", ml_res["best_name"], f"CV MAE: {ml_res['model_eval'][ml_res['best_name']]['CV Mean MAE (°C)']:.3f}°C")
 
 st.divider()
 
@@ -360,8 +367,8 @@ with tab_ml:
     st.markdown("### 2. Machine Learning Model Selection & Evaluation")
     st.markdown("""
     To avoid **temporal data leakage**, observations are strictly ordered chronologically:
-    - **Training Set (Earliest 80%):** Models are trained and compared using an expanding-window **TimeSeriesSplit** (5 folds).
-    - **Test Set (Latest 20%):** A strictly held-out recent block used exclusively for final evaluation.
+    - **Training Partition (Earliest 80%, 1980–2015):** Models are compared via 5-fold expanding-window **TimeSeriesSplit** cross-validation.
+    - **Test Partition (Latest 20%, 2016–2025):** Strictly sequestered out-of-sample block for final held-out benchmarking.
     """)
 
     train_years = f"{int(ml_res['X_train']['year'].min())}–{int(ml_res['X_train']['year'].max())}"
@@ -376,6 +383,15 @@ with tab_ml:
         "Test RMSE (°C)": "{:.4f}",
         "Test R²": "{:.4f}"
     }), use_container_width=True)
+
+    st.markdown("""
+    <div class="notice-box">
+        <strong>Critical Machine Learning Insights on Selection and Evaluation:</strong><br>
+        1. <strong>Why Random Forest was selected by Cross-Validation:</strong> Following standard ML protocol, model selection is performed strictly on the training partition (1980–2015) prior to testing. On historical training data, temperature anomalies fluctuated within a bounded range (0.14°C to 0.87°C), allowing Random Forest to capture local non-linearities and achieve a lower CV Mean MAE (0.1194°C vs 0.1272°C for Ridge).<br>
+        2. <strong>Why Ridge outperformed Random Forest on the Test Set:</strong> Decision trees cannot extrapolate beyond the maximum value in their training leaves (~0.76°C). When 2016–2025 experienced record out-of-sample warming (up to 1.28°C in 2024), Random Forest flatlined, doubling its test error (MAE 0.2514°C). Ridge Regression, by fitting a continuous regularized linear slope, extrapolated upward along the warming trend with an MAE of 0.1248°C.<br>
+        3. <strong>Accurate Interpretation of Negative R²:</strong> On the test set, R² evaluates squared error against the test set's own mean (1.014°C). Because the test partition underwent an abrupt upward regime shift compared to the training mean (0.480°C), a constant horizontal line at the test mean achieves smaller squared error than the models. A negative R² confirms that these simple statistical models cannot accurately account for accelerating out-of-distribution climate variance without physical Earth-system dynamics.
+    </div>
+    """, unsafe_allow_html=True)
 
     # Actual vs Predicted Plots
     st.markdown("#### Test Set Evaluation: Actual vs Predicted Anomalies")
@@ -401,7 +417,7 @@ with tab_ml:
         marker=dict(size=7, symbol="square")
     ))
     fig_pred.update_layout(
-        title="Held-out Test Period (2016–Recent): Actual Observations vs Model Predictions",
+        title="Held-out Test Period (2016–2025): Actual Observations vs Model Predictions",
         xaxis_title="Year", yaxis_title="Temperature Anomaly (°C)",
         hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
@@ -506,7 +522,7 @@ with tab_predict:
             st.warning("""
             ⚠️ **Scientific & Machine Learning Limitation Notice (Extrapolation):**
             - The input year falls beyond the training set range (1980–2015).
-            - **Notice the difference between the two models:** Ridge Regression can extrapolate linear trends upward, whereas Random Forest cannot extrapolate beyond the maximum value seen in its training leaves (~0.87°C).
+            - **Notice the difference between the two models:** Ridge Regression can extrapolate linear trends upward, whereas Random Forest cannot extrapolate beyond the maximum value seen in its training leaves (~0.76°C).
             - This is a classroom statistical demonstration, not an Earth-System physics model. Solar cycles, volcanic aerosols, methane, and oceanic oscillations (ENSO) are not included.
             """)
 
@@ -539,19 +555,20 @@ with tab_viva:
 
     with st.expander("📌 Rubric 3: Model Selection & Comparison", expanded=True):
         st.markdown("""
-        - **Ridge Regression:** Linear model with L2 regularization ($\lambda = 1.0$) preceded by `StandardScaler`. Regularization prevents collinearity explosion between `year` and `co2_ppm`.
-        - **Random Forest Regressor:** Non-linear ensemble of 300 decision trees (`max_depth=3`, `min_samples_leaf=2`).
-        - **Why Ridge outperforms Random Forest on Out-of-Sample Future Trends:**
-          Decision trees split data into orthogonal boundaries and predict the mean of leaf nodes. They **cannot predict values outside the range observed in training**. When the Earth entered unprecedented warming in 2016–2025, Random Forest flatlined, while Ridge's linear slope correctly extrapolated the rising temperature trajectory.
+        - **Why Random Forest was selected despite Ridge performing better on the test set:**
+          Standard machine learning protocol requires that model selection is made **solely on the training partition cross-validation** to prevent test-set data leakage. Within the historical training range (1980–2015), Random Forest effectively captured non-linear fluctuations and achieved a superior CV MAE (0.1194°C vs 0.1272°C for Ridge), legitimately winning selection.
+        - **Why Ridge outperformed Random Forest on the Test Set:**
+          Decision trees split feature space into orthogonal partitions and cannot predict outside the range of values in their training leaves. The training maximum was ~0.87°C, capping Random Forest predictions at ~0.76°C. When recent years experienced unprecedented warming (reaching 1.28°C in 2024), Random Forest flatlined, doubling its test error (MAE 0.2514°C). Ridge Regression, fitting a regularized linear hyperplane, successfully extrapolated the rising temperature trajectory (MAE 0.1248°C).
         """)
 
-    with st.expander("📌 Rubric 4: Evaluation Metrics (Mathematical Formulation)", expanded=True):
+    with st.expander("📌 Rubric 4: Evaluation Metrics & Negative R² Interpretation", expanded=True):
         st.markdown(r"""
         - **Mean Absolute Error (MAE):** $\text{MAE} = \frac{1}{n}\sum_{i=1}^{n} |y_i - \hat{y}_i|$ (Linear penalty, directly interpretable in °C).
         - **Mean Squared Error (MSE):** $\text{MSE} = \frac{1}{n}\sum_{i=1}^{n} (y_i - \hat{y}_i)^2$ (Quadratic penalty, heavily punishes large forecasting errors).
         - **Root Mean Squared Error (RMSE):** $\text{RMSE} = \sqrt{\text{MSE}}$ (Rooted to express error in °C).
-        - **Coefficient of Determination ($R^2$):** $R^2 = 1 - \frac{\sum (y_i - \hat{y}_i)^2}{\sum (y_i - \bar{y})^2}$.
-          *Note on Negative $R^2$:* On held-out time-series test sets undergoing rapid upward shifts, $R^2$ can be negative because the test set mean is significantly higher than the training mean.
+        - **Accurate Meaning of Negative $R^2$ ($R^2 < 0$):**
+          $$R^2 = 1 - \frac{\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{\sum_{i=1}^{n} (y_i - \bar{y}_{\text{test}})^2}$$
+          $R^2$ measures model error relative to predicting a constant value equal to the test set's own mean ($\bar{y}_{\text{test}} = 1.014^\circ\text{C}$). Because the test period (2016–2025) underwent a steep upward regime shift relative to the training period mean ($\bar{y}_{\text{train}} = 0.480^\circ\text{C}$), a horizontal line at the test mean achieves smaller squared error than the models. A negative $R^2$ ($R^2 = -0.1049$ for Ridge, $-3.0494$ for RF) confirms that these simple statistical models cannot accurately account for accelerating out-of-distribution climate variance without full physical Earth-system dynamics.
         """)
 
     with st.expander("📌 Rubric 5 & 7: Reproducibility & Deployment", expanded=True):
